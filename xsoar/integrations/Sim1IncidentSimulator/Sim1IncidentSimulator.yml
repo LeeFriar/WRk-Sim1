@@ -110,14 +110,22 @@ script:
 
         if not isinstance(payload, dict) or not isinstance(payload.get('incidents'), list):
             raise DemistoException('SIM1 response must contain an incidents array')
-        return [
-            {
+        severity_map = {'low': 0, 'medium': 1, 'high': 2, 'critical': 3}
+        results = []
+        for incident in payload['incidents']:
+            normalized = dict(incident)
+            source_severity = str(normalized.get('severity', '')).strip().lower()
+            if source_severity not in severity_map:
+                raise DemistoException('SIM1 returned unsupported severity: {}'.format(source_severity))
+            # XSOAR incident severity is numeric: 0=Low, 1=Medium, 2=High, 3=Critical.
+            normalized['severity'] = severity_map[source_severity]
+            results.append({
                 'name': incident.get('event_title') or incident.get('rule_name') or incident.get('id', 'SIM1 incident'),
                 'occurred': incident.get('created_at'),
-                'rawJSON': json.dumps(incident),
-            }
-            for incident in payload['incidents']
-        ]
+                'severity': severity_map[source_severity],
+                'rawJSON': json.dumps(normalized),
+            })
+        return results
 
 
     def test_module() -> str:
