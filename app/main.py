@@ -21,7 +21,9 @@ class NotableIncident(BaseModel):
     owner: str
     source: str
     destination: str
-    user: str
+    defender_id: str
+    username: str
+    hostname: str
     category: str
     mitre_technique: str
     created_at: datetime
@@ -50,8 +52,17 @@ RULES = [
     ("Endpoint Defense Impairment", "Attempt to disable endpoint protection detected", "critical", "T1562.001", "Defense Evasion"),
     ("Unusual DNS Query", "High-entropy DNS query pattern detected", "low", "T1071.004", "Command and Control"),
 ]
-USERS = ["j.smith", "a.patel", "m.chen", "svc-backup", "d.jones", "unknown"]
-HOSTS = ["ws-104", "srv-app-02", "db-prod-01", "laptop-lee", "web-03", "10.20.4.18"]
+USERNAMES = [
+    "j.smith", "a.patel", "m.chen", "svc-backup", "d.jones", "unknown", "r.wilson", "k.brown",
+    "s.garcia", "t.miller", "n.davis", "p.thompson", "l.white", "c.harris", "e.clark", "b.lewis",
+    "svc-deploy", "svc-monitor", "admin.local", "guest.user",
+]
+HOSTNAMES = [
+    "ws-104", "srv-app-02", "db-prod-01", "laptop-lee", "web-03", "ws-212", "srv-file-01", "db-test-02",
+    "vpn-gw-01", "mail-02", "dc-01", "ws-317", "build-agent-04", "app-prod-03", "jumpbox-01", "nas-02",
+    "k8s-node-05", "ws-088", "proxy-01", "10.20.4.18",
+]
+DEFENDER_IDS = [f"{number:08x}-1a2b-4c3d-8e9f-{number:012x}" for number in range(1, 51)]
 DESTINATIONS = ["198.51.100.24", "203.0.113.17", "updates.example.net", "10.20.8.9", "185.199.108.153"]
 SOURCES = ["WinEventLog:Security", "Sysmon", "CrowdStrike:FDR", "aws:cloudtrail", "suricata"]
 
@@ -80,6 +91,8 @@ def get_incidents(
     total = count if count is not None else rng.randint(1, 5)
     now = datetime.now(timezone.utc)
     incidents: list[NotableIncident] = []
+    usernames = [rng.choice(USERNAMES) for _ in range(total)]
+    hostnames = [rng.choice(HOSTNAMES) for _ in range(total)]
 
     for index in range(total):
         rule, title, severity, technique, category = rng.choice(RULES)
@@ -89,14 +102,16 @@ def get_incidents(
                 id=f"notable-{now:%Y%m%d}-{rng.randrange(100000, 999999)}-{index + 1}",
                 rule_name=rule,
                 event_title=title,
-                description=f"{title} on {rng.choice(HOSTS)} involving {rng.choice(USERS)}.",
+                description=f"{title} on {hostnames[index]} involving {usernames[index]}.",
                 severity=severity,
                 status=rng.choice(["new", "in_progress", "pending", "resolved"]),
                 urgency="high" if severity == "critical" else severity,
                 owner=rng.choice(["unassigned", "soc_analyst_1", "soc_analyst_2"]),
                 source=rng.choice(SOURCES),
                 destination=rng.choice(DESTINATIONS),
-                user=rng.choice(USERS),
+                defender_id=rng.choice(DEFENDER_IDS),
+                username=usernames[index],
+                hostname=hostnames[index],
                 category=category,
                 mitre_technique=technique,
                 created_at=created,
