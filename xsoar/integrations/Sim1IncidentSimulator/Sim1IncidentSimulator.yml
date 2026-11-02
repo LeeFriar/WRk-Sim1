@@ -1,6 +1,7 @@
 commonfields:
   id: Sim1IncidentSimulator
   version: -1
+vcShouldKeepItemLegacyProdMachine: false
 name: Sim1IncidentSimulator
 display: SIM1 Notable Incident Simulator
 category: Data Enrichment & Threat Intelligence
@@ -12,11 +13,8 @@ configuration:
   type: 0
   required: true
 - display: Username
-  name: username
-  type: 0
-  required: true
-- display: Password
-  name: password
+  displaypassword: Password
+  name: credentials
   type: 9
   required: true
 - display: Trust any certificate (not secure)
@@ -28,10 +26,31 @@ configuration:
   name: count
   type: 0
   required: false
+- display: Fetch incidents
+  name: isFetch
+  type: 8
+  required: false
+- display: Incidents Fetch Interval
+  name: incidentFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+- display: Incident type
+  name: incidentType
+  type: 13
+  required: false
 script:
-  type: python
-  subtype: python3
-  dockerimage: demisto/python3:3.12.8.4961046
+  commands:
+  - name: sim1-get-incidents
+    arguments:
+    - name: count
+      description: Number of incidents to request (1–5). Overrides the integration
+        default; blank uses configured count or random 1–5.
+    outputs:
+    - contextPath: SIM1.Incident
+      description: A simulated Splunk notable incident.
+      type: Unknown
+    description: Fetch simulated notable incidents from the SIM1 API.
   script: |
     register_module_line('Sim1IncidentSimulator', 'start', __line__())
 
@@ -39,9 +58,6 @@ script:
     from typing import Any, Dict, List
 
     import requests
-
-    from CommonServerPython import *  # noqa: F401,F403
-    from CommonServerUserPython import *  # noqa: F401,F403
 
     INTEGRATION_NAME = 'Sim1IncidentSimulator'
     DEFAULT_TIMEOUT = 30
@@ -74,7 +90,7 @@ script:
             query['count'] = count
 
         session = requests.Session()
-        session.auth = (str(params.get('username', '')), str(params.get('password', '')))
+        session.auth = (str(params.get("credentials", {}).get('identifier', '')), str(params.get("credentials", {}).get('password', '')))
         session.verify = verify_tls(params)
         session.headers.update({'Accept': 'application/json'})
         try:
@@ -110,7 +126,7 @@ script:
         if not base_url:
             raise DemistoException('Base URL is required')
         session = requests.Session()
-        session.auth = (str(params.get('username', '')), str(params.get('password', '')))
+        session.auth = (str(params.get("credentials", {}).get('identifier', '')), str(params.get("credentials", {}).get('password', '')))
         session.verify = verify_tls(params)
         try:
             response = session.get(base_url + '/health', timeout=DEFAULT_TIMEOUT)
@@ -151,7 +167,7 @@ script:
         command = demisto.command()
         if command == 'test-module':
             return_results(test_module())
-        elif command == 'sim1-get-incidents':
+        elif command in ['fetch-incidents', "sim1-get-incidents"]:
             return_results(incidents_command(demisto.args()))
         else:
             raise DemistoException('Unsupported command: {}'.format(command))
@@ -161,22 +177,10 @@ script:
         main()
 
     register_module_line('Sim1IncidentSimulator', 'end', __line__())
-  commands:
-  - name: sim1-get-incidents
-    arguments:
-    - name: count
-      description: Number of incidents to request (1–5). Overrides the integration default; blank uses configured count or random 1–5.
-      isRequired: false
-    description: Fetch simulated notable incidents from the SIM1 API.
-    outputs:
-    - contextPath: SIM1.Incident
-      description: A simulated Splunk notable incident.
-      type: Unknown
+  type: python
+  dockerimage: demisto/python3:3.12.14.13053055
+  subtype: python3
   isfetch: true
-  isfetchevents: false
-  feed: false
-  ispolling: true
   runonce: false
-  dockerimage: demisto/python3:3.12.8.4961046
-  configuration: {}
-  polling: true
+signature: ""
+restrictioncenter: {}
