@@ -1,0 +1,14 @@
+services:
+  sim1:
+    build: .
+    image: sim1:latest
+    container_name: sim1
+    restart: unless-stopped
+    expose:
+      - "3000"
+    networks:
+      - lee-net
+
+networks:
+  lee-net:
+    external: true
