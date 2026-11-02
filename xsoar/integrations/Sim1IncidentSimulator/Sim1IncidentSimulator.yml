@@ -1,0 +1,182 @@
+commonfields:
+  id: Sim1IncidentSimulator
+  version: -1
+name: Sim1IncidentSimulator
+display: SIM1 Notable Incident Simulator
+category: Data Enrichment & Threat Intelligence
+description: Fetch simulated Splunk notable incidents from the SIM1 FastAPI service.
+configuration:
+- display: Base URL
+  name: url
+  defaultvalue: https://sim1.leefriar.co.uk
+  type: 0
+  required: true
+- display: Username
+  name: username
+  type: 0
+  required: true
+- display: Password
+  name: password
+  type: 9
+  required: true
+- display: Trust any certificate (not secure)
+  name: insecure
+  defaultvalue: "false"
+  type: 8
+  required: false
+- display: Incident count (leave blank for random 1–5)
+  name: count
+  type: 0
+  required: false
+script:
+  type: python
+  subtype: python3
+  dockerimage: demisto/python3:3.12.8.4961046
+  script: |
+    register_module_line('Sim1IncidentSimulator', 'start', __line__())
+
+    import json
+    from typing import Any, Dict, List
+
+    import requests
+
+    from CommonServerPython import *  # noqa: F401,F403
+    from CommonServerUserPython import *  # noqa: F401,F403
+
+    INTEGRATION_NAME = 'Sim1IncidentSimulator'
+    DEFAULT_TIMEOUT = 30
+
+
+    def verify_tls(params: Dict[str, Any]) -> bool:
+        value = params.get('insecure', False)
+        return not (value is True or str(value).strip().lower() in ('true', 'yes', '1'))
+
+
+    def get_params() -> Dict[str, Any]:
+        return demisto.params()
+
+
+    def fetch_incidents() -> List[Dict[str, Any]]:
+        params = get_params()
+        base_url = str(params.get('url', '')).strip().rstrip('/')
+        if not base_url:
+            raise DemistoException('Base URL is required')
+
+        query: Dict[str, Any] = {}
+        configured_count = str(params.get('count', '')).strip()
+        if configured_count:
+            try:
+                count = int(configured_count)
+            except ValueError:
+                raise DemistoException('Incident count must be a number from 1 to 5')
+            if count < 1 or count > 5:
+                raise DemistoException('Incident count must be between 1 and 5')
+            query['count'] = count
+
+        session = requests.Session()
+        session.auth = (str(params.get('username', '')), str(params.get('password', '')))
+        session.verify = verify_tls(params)
+        session.headers.update({'Accept': 'application/json'})
+        try:
+            response = session.get(
+                base_url + '/api/incidents',
+                params=query,
+                timeout=DEFAULT_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise DemistoException('Failed to fetch incidents from SIM1: {}'.format(exc))
+        except ValueError as exc:
+            raise DemistoException('SIM1 returned invalid JSON: {}'.format(exc))
+        finally:
+            session.close()
+
+        if not isinstance(payload, dict) or not isinstance(payload.get('incidents'), list):
+            raise DemistoException('SIM1 response must contain an incidents array')
+        return [
+            {
+                'name': incident.get('event_title') or incident.get('rule_name') or incident.get('id', 'SIM1 incident'),
+                'occurred': incident.get('created_at'),
+                'rawJSON': json.dumps(incident),
+            }
+            for incident in payload['incidents']
+        ]
+
+
+    def test_module() -> str:
+        params = get_params()
+        base_url = str(params.get('url', '')).strip().rstrip('/')
+        if not base_url:
+            raise DemistoException('Base URL is required')
+        session = requests.Session()
+        session.auth = (str(params.get('username', '')), str(params.get('password', '')))
+        session.verify = verify_tls(params)
+        try:
+            response = session.get(base_url + '/health', timeout=DEFAULT_TIMEOUT)
+            response.raise_for_status()
+            if response.json().get('status') != 'ok':
+                raise DemistoException('SIM1 health check returned an unexpected response')
+        except requests.RequestException as exc:
+            raise DemistoException('Could not connect to SIM1: {}'.format(exc))
+        finally:
+            session.close()
+        return 'ok'
+
+
+    def incidents_command(args: Dict[str, Any]) -> CommandResults:
+        # The configured count may be overridden per command. The simulator caps it at five.
+        requested = str(args.get('count', '')).strip()
+        params = get_params()
+        if requested:
+            try:
+                count = int(requested)
+            except ValueError:
+                raise DemistoException('count must be an integer from 1 to 5')
+            if count < 1 or count > 5:
+                raise DemistoException('count must be between 1 and 5')
+            params['count'] = count
+
+        incidents = fetch_incidents()
+        raw_incidents = [json.loads(incident['rawJSON']) for incident in incidents]
+        return CommandResults(
+            readable_output='Retrieved {} simulated notable incident(s).'.format(len(incidents)),
+            outputs_prefix='SIM1.Incident',
+            outputs=raw_incidents,
+            raw_response=raw_incidents,
+        )
+
+
+    def main() -> None:
+        command = demisto.command()
+        if command == 'test-module':
+            return_results(test_module())
+        elif command == 'sim1-get-incidents':
+            return_results(incidents_command(demisto.args()))
+        else:
+            raise DemistoException('Unsupported command: {}'.format(command))
+
+
+    if __name__ in ('__main__', 'builtins', '__builtin__'):
+        main()
+
+    register_module_line('Sim1IncidentSimulator', 'end', __line__())
+  commands:
+  - name: sim1-get-incidents
+    arguments:
+    - name: count
+      description: Number of incidents to request (1–5). Overrides the integration default; blank uses configured count or random 1–5.
+      isRequired: false
+    description: Fetch simulated notable incidents from the SIM1 API.
+    outputs:
+    - contextPath: SIM1.Incident
+      description: A simulated Splunk notable incident.
+      type: Unknown
+  isfetch: true
+  isfetchevents: false
+  feed: false
+  ispolling: true
+  runonce: false
+  dockerimage: demisto/python3:3.12.8.4961046
+  configuration: {}
+  polling: true
