@@ -25,7 +25,10 @@ def test_requested_count_and_incident_fields():
     assert body["count"] == 4
     assert len(body["incidents"]) == 4
     incident = body["incidents"][0]
-    assert {"id", "defender_id", "username", "hostname", "rule_name", "severity", "status", "source", "destination", "mitre_technique"} <= incident.keys()
+    assert {"id", "defender_id", "username", "hostname", "incidentId", "accountUpn", "deviceName", "rule_name", "severity", "status", "source", "destination", "mitre_technique"} <= incident.keys()
+    assert incident["incidentId"] == incident["defender_id"]
+    assert incident["accountUpn"] == incident["username"]
+    assert incident["deviceName"] == incident["hostname"]
     assert "user" not in incident
 
 

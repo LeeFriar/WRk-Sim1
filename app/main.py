@@ -24,6 +24,9 @@ class NotableIncident(BaseModel):
     defender_id: str
     username: str
     hostname: str
+    incidentId: str
+    accountUpn: str
+    deviceName: str
     category: str
     mitre_technique: str
     created_at: datetime
@@ -97,6 +100,9 @@ def get_incidents(
     for index in range(total):
         rule, title, severity, technique, category = rng.choice(RULES)
         created = now - timedelta(minutes=rng.randint(1, 1440))
+        defender_id = rng.choice(DEFENDER_IDS)
+        username = usernames[index]
+        hostname = hostnames[index]
         incidents.append(
             NotableIncident(
                 id=f"notable-{now:%Y%m%d}-{rng.randrange(100000, 999999)}-{index + 1}",
@@ -109,9 +115,12 @@ def get_incidents(
                 owner=rng.choice(["unassigned", "soc_analyst_1", "soc_analyst_2"]),
                 source=rng.choice(SOURCES),
                 destination=rng.choice(DESTINATIONS),
-                defender_id=rng.choice(DEFENDER_IDS),
-                username=usernames[index],
-                hostname=hostnames[index],
+                defender_id=defender_id,
+                username=username,
+                hostname=hostname,
+                incidentId=defender_id,
+                accountUpn=username,
+                deviceName=hostname,
                 category=category,
                 mitre_technique=technique,
                 created_at=created,
