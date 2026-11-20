@@ -26,9 +26,9 @@ def test_requested_count_and_incident_fields():
     assert len(body["incidents"]) == 4
     incident = body["incidents"][0]
     assert {"id", "defender_id", "username", "hostname", "incidentId", "accountUpn", "deviceName", "rule_name", "severity", "status", "source", "destination", "mitre_technique"} <= incident.keys()
-    assert incident["incidentId"] == incident["defender_id"]
-    assert incident["accountUpn"] == incident["username"]
-    assert incident["deviceName"] == incident["hostname"]
+    assert incident["incidentId"] in ("", incident["defender_id"])
+    assert incident["accountUpn"] in ("", incident["username"])
+    assert incident["deviceName"] in ("", incident["hostname"])
     assert "user" not in incident
 
 
@@ -41,6 +41,17 @@ def test_duplicate_identity_values_come_from_bounded_pools():
     assert len({incident["username"] for incident in incidents}) <= 5
     assert len({incident["hostname"] for incident in incidents}) <= 5
     assert all(len(incident["defender_id"]) == 36 for incident in incidents)
+
+
+def test_alias_fields_are_sometimes_empty():
+    incidents = [
+        incident
+        for seed in range(100)
+        for incident in client.get(f"/api/incidents?count=5&seed={seed}").json()["incidents"]
+    ]
+    assert any(incident["incidentId"] == "" for incident in incidents)
+    assert any(incident["accountUpn"] == "" for incident in incidents)
+    assert any(incident["deviceName"] == "" for incident in incidents)
 
 
 def test_count_out_of_range_is_rejected():
