@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import random
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
 
@@ -24,6 +25,7 @@ class NotableIncident(BaseModel):
     defender_id: str
     username: str
     hostname: str
+    ip: str
     incidentId: str
     accountUpn: str
     deviceName: str
@@ -85,13 +87,46 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+def random_ip(rng: random.Random) -> str:
+    if rng.choice((True, False)):
+        return f"10.{rng.randint(0, 255)}.{rng.randint(0, 255)}.{rng.randint(1, 254)}"
+    # Documentation-only public range, so generated external examples are safe to use in tests.
+    return f"198.51.100.{rng.randint(1, 254)}"
+
+
 @app.get("/api/incidents", response_model=IncidentResponse, tags=["incidents"])
 def get_incidents(
-    count: Annotated[int | None, Query(ge=1, le=5, description="Optional exact number of incidents")]=None,
+    limit: Annotated[str | None, Query(description="Exact incident count; an empty value returns no incidents")]=None,
+    between: Annotated[str | None, Query(description="Random count range in MIN-MAX form, for example 5-10")]=None,
+    count: Annotated[int | None, Query(ge=1, le=5, description="Deprecated alias for limit")]=None,
     seed: Annotated[int | None, Query(description="Optional deterministic seed for repeatable tests")]=None,
 ) -> IncidentResponse:
     rng = random.Random(seed)
-    total = count if count is not None else rng.randint(1, 5)
+    if limit is not None and (between is not None or count is not None):
+        raise HTTPException(status_code=422, detail="limit cannot be combined with between or count")
+    if between is not None and count is not None:
+        raise HTTPException(status_code=422, detail="between cannot be combined with count")
+
+    if limit is not None:
+        if limit.strip() == "":
+            total = 0
+        else:
+            try:
+                total = int(limit)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="limit must be a non-negative integer")
+            if total < 0 or total > 100:
+                raise HTTPException(status_code=422, detail="limit must be between 0 and 100")
+    elif between is not None:
+        match = re.fullmatch(r"\s*(\d+)\s*-\s*(\d+)\s*", between)
+        if not match:
+            raise HTTPException(status_code=422, detail="between must use MIN-MAX format, for example 5-10")
+        lower, upper = map(int, match.groups())
+        if lower < 0 or upper > 100 or lower > upper:
+            raise HTTPException(status_code=422, detail="between must be an ascending range from 0 to 100")
+        total = rng.randint(lower, upper)
+    else:
+        total = count if count is not None else rng.randint(1, 5)
     now = datetime.now(timezone.utc)
     incidents: list[NotableIncident] = []
     usernames = [rng.choice(USERNAMES) for _ in range(total)]
@@ -118,6 +153,7 @@ def get_incidents(
                 defender_id=defender_id,
                 username=username,
                 hostname=hostname,
+                ip=random_ip(rng),
                 incidentId="" if rng.randrange(20) == 0 else defender_id,
                 accountUpn="" if rng.randrange(20) == 0 else username,
                 deviceName="" if rng.randrange(20) == 0 else hostname,

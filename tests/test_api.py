@@ -56,3 +56,25 @@ def test_alias_fields_are_sometimes_empty():
 
 def test_count_out_of_range_is_rejected():
     assert client.get("/api/incidents?count=6").status_code == 422
+
+
+def test_limit_param_and_empty_limit():
+    exact = client.get("/api/incidents?limit=4&seed=7").json()
+    assert exact["count"] == 4
+    assert len(exact["incidents"]) == 4
+
+    empty = client.get("/api/incidents?limit=").json()
+    assert empty["count"] == 0
+    assert empty["incidents"] == []
+
+
+def test_between_param_returns_requested_range():
+    body = client.get("/api/incidents?between=5-10&seed=7").json()
+    assert 5 <= body["count"] <= 10
+    assert len(body["incidents"]) == body["count"]
+
+
+def test_incidents_include_internal_or_external_ip():
+    incidents = client.get("/api/incidents?limit=5&seed=7").json()["incidents"]
+    assert all("ip" in incident for incident in incidents)
+    assert all(incident["ip"].startswith(("10.", "198.51.100.")) for incident in incidents)

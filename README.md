@@ -10,8 +10,12 @@ A small FastAPI service that simulates Splunk notable incident results for integ
 
 Optional query parameters on `/api/incidents`:
 
-- `count` — set an exact count from 1 to 5.
+- `limit` — set an exact count from 0 to 100. `limit=` returns an empty incidents array.
+- `between` — choose a random count from an inclusive range, such as `between=5-10`.
+- `count` — legacy exact count from 1 to 5; omitted requests continue to return a random 1–5 incidents.
 - `seed` — use a deterministic random seed for repeatable tests.
+
+Each incident also includes an `ip` address, randomly selected from a private internal range or a public documentation range for safe external-IP examples.
 
 ## Run with Docker
 
