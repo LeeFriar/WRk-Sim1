@@ -1,0 +1,204 @@
+commonfields:
+  id: incident-sim
+  version: -1
+vcShouldKeepItemLegacyProdMachine: false
+name: incident-sim
+display: incident-sim
+category: Data Enrichment & Threat Intelligence
+description: Fetch simulated notable incidents from the SIM1 FastAPI service.
+configuration:
+- display: Base URL
+  name: url
+  defaultvalue: https://sim1.leefriar.co.uk
+  type: 0
+  required: true
+- display: Username
+  displaypassword: Password
+  name: credentials
+  type: 9
+  required: true
+- display: Trust any certificate (not secure)
+  name: insecure
+  defaultvalue: "false"
+  type: 8
+  required: false
+- display: Incident limit (0–100; blank uses API default)
+  name: limit
+  type: 0
+  required: false
+- display: Incident count range (MIN-MAX, e.g. 5-10)
+  name: between
+  type: 0
+  required: false
+- display: Fetch incidents
+  name: isFetch
+  type: 8
+  required: false
+- display: Incidents Fetch Interval
+  name: incidentFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+- display: Incident type
+  name: incidentType
+  type: 13
+  required: false
+script:
+  commands:
+  - name: sim1-get-incidents
+    arguments:
+    - name: limit
+      description: Exact number to return from 0 to 100. Overrides the instance setting.
+      isRequired: false
+    - name: between
+      description: Inclusive random range in MIN-MAX form, for example 5-10. Overrides the instance setting.
+      isRequired: false
+    outputs:
+    - contextPath: SIM1.Incident
+      description: A simulated notable incident.
+      type: Unknown
+    description: Fetch simulated notable incidents from the SIM1 API.
+  script: |
+    register_module_line('incident-sim', 'start', __line__())
+
+    import json
+    import re
+    from typing import Any, Dict, List, Optional
+
+    import requests
+
+    DEFAULT_TIMEOUT = 30
+    SEVERITY_MAP = {'low': 0, 'medium': 1, 'high': 2, 'critical': 3}
+
+
+    def verify_tls(params: Dict[str, Any]) -> bool:
+        value = params.get('insecure', False)
+        return not (value is True or str(value).strip().lower() in ('true', 'yes', '1'))
+
+
+    def build_query(params: Dict[str, Any], args: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+        args = args or {}
+        command_override = 'limit' in args or 'between' in args
+        limit = args.get('limit') if command_override else params.get('limit')
+        between = args.get('between') if command_override else params.get('between')
+        limit = '' if limit is None else str(limit).strip()
+        between = '' if between is None else str(between).strip()
+        if limit and between:
+            raise DemistoException('Set either limit or between, not both')
+        if limit:
+            try:
+                value = int(limit)
+            except ValueError:
+                raise DemistoException('limit must be an integer from 0 to 100')
+            if value < 0 or value > 100:
+                raise DemistoException('limit must be between 0 and 100')
+            return {'limit': limit}
+        if between:
+            match = re.fullmatch(r'(\d+)\s*-\s*(\d+)', between)
+            if not match:
+                raise DemistoException('between must use MIN-MAX format, for example 5-10')
+            low, high = map(int, match.groups())
+            if low > high or high > 100:
+                raise DemistoException('between must be an ascending range from 0 to 100')
+            return {'between': between}
+        return {}
+
+
+    def request_payload(params: Dict[str, Any], endpoint: str, query: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        base_url = str(params.get('url', '')).strip().rstrip('/')
+        if not base_url:
+            raise DemistoException('Base URL is required')
+        credentials = params.get('credentials') or {}
+        session = requests.Session()
+        session.auth = (str(credentials.get('identifier', '')), str(credentials.get('password', '')))
+        session.verify = verify_tls(params)
+        session.headers.update({'Accept': 'application/json'})
+        try:
+            response = session.get(base_url + endpoint, params=query or {}, timeout=DEFAULT_TIMEOUT)
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise DemistoException('SIM1 request failed: {}'.format(exc))
+        except ValueError as exc:
+            raise DemistoException('SIM1 returned invalid JSON: {}'.format(exc))
+        finally:
+            session.close()
+        if not isinstance(payload, dict):
+            raise DemistoException('SIM1 returned an unexpected response')
+        return payload
+
+
+    def fetch_incidents() -> List[Dict[str, Any]]:
+        params = demisto.params()
+        query = build_query(params)
+        payload = request_payload(params, '/api/incidents', query)
+        if not isinstance(payload.get('incidents'), list):
+            raise DemistoException('SIM1 response must contain an incidents array')
+        results = []
+        for incident in payload['incidents']:
+            normalized = dict(incident)
+            severity = str(normalized.get('severity', '')).strip().lower()
+            if severity not in SEVERITY_MAP:
+                raise DemistoException('SIM1 returned unsupported severity: {}'.format(severity))
+            normalized['severity'] = SEVERITY_MAP[severity]
+            results.append({
+                'name': incident.get('event_title') or incident.get('rule_name') or incident.get('id', 'SIM1 incident'),
+                'occurred': incident.get('created_at'),
+                'severity': SEVERITY_MAP[severity],
+                'rawJSON': json.dumps(normalized),
+            })
+        return results
+
+
+    def test_module() -> str:
+        payload = request_payload(demisto.params(), '/health')
+        if payload.get('status') != 'ok':
+            raise DemistoException('SIM1 health check returned an unexpected response')
+        return 'ok'
+
+
+    def incidents_command(args: Dict[str, Any]) -> CommandResults:
+        params = demisto.params()
+        query = build_query(params, args)
+        payload = request_payload(params, '/api/incidents', query)
+        if not isinstance(payload.get('incidents'), list):
+            raise DemistoException('SIM1 response must contain an incidents array')
+        incidents = []
+        for item in payload['incidents']:
+            normalized = dict(item)
+            severity = str(normalized.get('severity', '')).strip().lower()
+            if severity not in SEVERITY_MAP:
+                raise DemistoException('SIM1 returned unsupported severity: {}'.format(severity))
+            normalized['severity'] = SEVERITY_MAP[severity]
+            incidents.append(normalized)
+        return CommandResults(
+            readable_output='Retrieved {} simulated notable incident(s).'.format(len(incidents)),
+            outputs_prefix='SIM1.Incident',
+            outputs=incidents,
+            raw_response=incidents,
+        )
+
+
+    def main() -> None:
+        command = demisto.command()
+        if command == 'test-module':
+            return_results(test_module())
+        elif command == 'sim1-get-incidents':
+            return_results(incidents_command(demisto.args()))
+        elif command == 'fetch-incidents':
+            demisto.incidents(fetch_incidents())
+        else:
+            raise DemistoException('Unsupported command: {}'.format(command))
+
+
+    if __name__ in ('__main__', 'builtins', '__builtin__'):
+        main()
+
+    register_module_line('incident-sim', 'end', __line__())
+  type: python
+  dockerimage: demisto/python3:3.12.14.13053055
+  subtype: python3
+  isfetch: true
+  runonce: false
+signature: ""
+restrictioncenter: {}

@@ -32,6 +32,6 @@ The included `Jenkinsfile` builds the image, runs the test suite in the image, t
 
 ## Cortex XSOAR 8 integration
 
-The custom integration is in `xsoar/integrations/Sim1IncidentSimulator/Sim1IncidentSimulator.yml`. Import the YAML as a custom integration in XSOAR, create an instance, and configure the base URL, Basic Auth username/password, and optional incident count (1–5). Keep certificate validation enabled for the public HTTPS endpoint; the insecure TLS option is only for testing.
+The custom integration is in `xsoar/integrations/incident-sim/incident-sim.yml`. Import the YAML as a custom integration in XSOAR, create an `incident-sim` instance, and configure the base URL, Basic Auth username/password, and either an optional incident limit or a random count range. Keep certificate validation enabled for the public HTTPS endpoint; the insecure TLS option is only for testing.
 
-The integration's `sim1-get-incidents` command returns incident data in `SIM1.Incident` context. The integration is also configured for periodic fetch, which maps each result to XSOAR's standard `name`, `occurred`, and `rawJSON` fields. Because NPM enforces Basic Auth, supply the same credentials configured in NPM. XSOAR must be able to reach the public URL (or another route to the service).
+The integration's `sim1-get-incidents` command accepts `limit` or `between` arguments and returns incident data in `SIM1.Incident` context. The same settings can be configured on the instance for periodic fetch, which maps each result to XSOAR's standard `name`, `occurred`, `severity`, and `rawJSON` fields. Because NPM enforces Basic Auth, supply the same credentials configured in NPM. XSOAR must be able to reach the public URL (or another route to the service).
